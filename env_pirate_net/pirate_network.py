@@ -76,9 +76,11 @@ class FourierEmbedding(nn.Module):
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         # x shape: (batch, input_dim)
         # Output shape: (batch, embed_dim)
-        projected = torch.matmul(x, self.W)  # (batch, embed_dim // 2)
+        # Ensure W is on the same device as x
+        W = self.W.to(x.device)
+        projected = torch.matmul(x, W)  # (batch, embed_dim // 2)
         fourier_features = torch.cat([
-            torch.cos(projected), 
+            torch.cos(projected),
             torch.sin(projected)
         ], dim=-1)
         return fourier_features
