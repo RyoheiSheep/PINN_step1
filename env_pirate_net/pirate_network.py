@@ -53,9 +53,14 @@ class Dense(nn.Module):
             return self.linear(x)
         else:
             # Weight factorization: kernel = g * v
-            g = torch.exp(self.log_g)  # Ensure g > 0
-            kernel = self.v * g.unsqueeze(0)  # Broadcasting: (in_features, 1) * (1, out_features)
-            return F.linear(x, kernel.T, self.bias)
+            # Ensure parameters are on the same device as input
+            v = self.v.to(x.device)
+            log_g = self.log_g.to(x.device)
+            bias = self.bias.to(x.device)
+
+            g = torch.exp(log_g)  # Ensure g > 0
+            kernel = v * g.unsqueeze(0)  # Broadcasting: (in_features, 1) * (1, out_features)
+            return F.linear(x, kernel.T, bias)
 
 class FourierEmbedding(nn.Module):
     """
@@ -105,16 +110,16 @@ class PeriodEmbedding(nn.Module):
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         # Apply periodic embeddings to specified axes
         y_components = []
-        
+
         for i in range(x.shape[-1]):
             if i in self.axes:
                 axis_idx = self.axes.index(i)
-                period = getattr(self, f'period_{axis_idx}')
+                period = getattr(self, f'period_{axis_idx}').to(x.device)
                 xi = x[..., i]
                 y_components.extend([torch.cos(period * xi), torch.sin(period * xi)])
             else:
                 y_components.append(x[..., i])
-        
+
         return torch.stack(y_components, dim=-1)
 
 class ModifiedMlp(nn.Module):
