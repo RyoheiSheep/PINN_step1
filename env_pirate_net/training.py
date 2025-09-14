@@ -40,7 +40,7 @@ class PINNTrainer:
         print(f"Network created: {sum(p.numel() for p in self.network.parameters()):,} parameters")
         
         # Create physics problem
-        self.physics = CavityFlowProblem(config.physics)
+        self.physics = CavityFlowProblem(config.physics, config.training)
         print(f"Physics problem: Re={self.physics.re}, ν={self.physics.nu:.6f}")
         
         # Create optimizer

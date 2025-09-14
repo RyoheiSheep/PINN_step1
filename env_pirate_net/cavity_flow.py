@@ -25,21 +25,27 @@ class CavityFlowProblem:
     2D lid-driven cavity flow problem implementation
     Based on JAX reference: pirate_net/examples/ldc/models.py and utils.py
     """
-    
-    def __init__(self, config: PhysicsConfig):
+
+    def __init__(self, config: PhysicsConfig, training_config=None):
         self.config = config
+        self.training_config = training_config  # Need this for n_boundary
         self.re = config.reynolds_number
         self.nu = config.viscosity  # Computed in config post_init
         self.lid_velocity = config.lid_velocity
-        
+
         # Domain bounds
         self.x_bounds, self.y_bounds = config.domain_bounds
         self.x_min, self.x_max = self.x_bounds
         self.y_min, self.y_max = self.y_bounds
-        
+
         # Pre-generate boundary points (following JAX reference)
-        self.boundary_points = self.generate_boundary_points()
-        
+        # Use n_boundary from training config if available
+        if training_config:
+            num_pts_per_side = training_config.n_boundary // 4
+        else:
+            num_pts_per_side = 64  # fallback default
+        self.boundary_points = self.generate_boundary_points(num_pts_per_side)
+
         # Boundary condition values (following JAX reference setup)
         self._setup_boundary_conditions()
     
@@ -359,7 +365,7 @@ if __name__ == "__main__":
     print("Testing Cavity Flow Problem...")
     
     config = Config()
-    physics = CavityFlowProblem(config.physics)
+    physics = CavityFlowProblem(config.physics, config.training)
     
     print(f"✓ Physics problem created")
     print(f"  Reynolds number: {physics.re}")

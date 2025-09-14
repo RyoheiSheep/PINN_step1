@@ -9,26 +9,26 @@ import sys
 from pathlib import Path
 import torch
 
-from settings import Config
+from settings import Config, default_config
 from training import train_cavity_flow, PINNTrainer
 
 def parse_args():
     """Parse command line arguments"""
     parser = argparse.ArgumentParser(description="Train PINN for 2D Cavity Flow")
     
-    # Training parameters
-    parser.add_argument("--epochs", type=int, default=1000, help="Number of training epochs")
-    parser.add_argument("--lr", type=float, default=1e-3, help="Learning rate")
-    parser.add_argument("--batch-size", type=int, default=1000, help="Number of collocation points")
-    parser.add_argument("--re", type=float, default=100, help="Reynolds number")
+    # Training parameters - use defaults from settings.py
+    parser.add_argument("--epochs", type=int, default=default_config.training.epochs, help="Number of training epochs")
+    parser.add_argument("--lr", type=float, default=default_config.training.learning_rate, help="Learning rate")
+    parser.add_argument("--batch-size", type=int, default=default_config.training.n_collocation, help="Number of collocation points")
+    parser.add_argument("--re", type=float, default=default_config.physics.reynolds_number, help="Reynolds number")
     
-    # Optimizer settings
-    parser.add_argument("--optimizer", choices=["SOAP", "Adam"], default="SOAP", help="Optimizer type")
-    parser.add_argument("--precond-freq", type=int, default=10, help="SOAP preconditioning frequency")
+    # Optimizer settings - use defaults from settings.py
+    parser.add_argument("--optimizer", choices=["SOAP", "Adam"], default=default_config.training.optimizer, help="Optimizer type")
+    parser.add_argument("--precond-freq", type=int, default=default_config.training.precondition_frequency, help="SOAP preconditioning frequency")
     
-    # Network architecture
-    parser.add_argument("--hidden-dim", type=int, default=256, help="Hidden layer dimension")
-    parser.add_argument("--num-layers", type=int, default=4, help="Number of hidden layers")
+    # Network architecture - use defaults from settings.py
+    parser.add_argument("--hidden-dim", type=int, default=default_config.network.hidden_dim, help="Hidden layer dimension")
+    parser.add_argument("--num-layers", type=int, default=default_config.network.num_layers, help="Number of hidden layers")
     
     # Loss weights
     parser.add_argument("--physics-weight", type=float, default=1.0, help="Physics loss weight")
