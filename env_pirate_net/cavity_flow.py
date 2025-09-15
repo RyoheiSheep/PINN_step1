@@ -188,8 +188,8 @@ class CavityFlowProblem:
         Returns:
             Dictionary with boundary loss components
         """
-        with torch.no_grad():
-            boundary_coords = self.boundary_points
+        # FIXED: Removed torch.no_grad() to allow proper gradient flow for boundary conditions
+        boundary_coords = self.boundary_points
         
         # Forward pass on boundary points
         output = network(boundary_coords)
