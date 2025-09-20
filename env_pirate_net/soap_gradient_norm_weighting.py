@@ -9,6 +9,9 @@ import matplotlib.pyplot as plt
 from pathlib import Path
 from settings import Config
 from training import PINNTrainer
+import datetime
+import os
+import uuid
 
 def create_soap_gradient_norm_config():
     """Create configuration for SOAP + Gradient Norm Weighting"""
@@ -46,7 +49,7 @@ def create_soap_gradient_norm_config():
 
     return config
 
-def train_soap_gradient_norm():
+def train_soap_gradient_norm(runtime_id):
     """Train PINN with SOAP optimizer and gradient norm weighting"""
     print("SOAP + Gradient Norm Weighting Training")
     print("=" * 50)
@@ -90,7 +93,10 @@ def train_soap_gradient_norm():
     print("Epoch | Total Loss | Physics  | Boundary | Weights (ru, rv, rc, u_bc, v_bc)")
     print("-" * 90)
 
-    # Training loop
+    # Training loop with best model tracking
+    best_loss = float('inf')
+    best_model_state = None
+
     for epoch in range(config.training.epochs):
         loss_dict = trainer.train_step()
 
@@ -110,6 +116,12 @@ def train_soap_gradient_norm():
         training_history['weight_u_bc'].append(loss_dict.get('weight_u_bc', 1.0))
         training_history['weight_v_bc'].append(loss_dict.get('weight_v_bc', 1.0))
 
+        # Track best model
+        current_loss = loss_dict['total']
+        if current_loss < best_loss:
+            best_loss = current_loss
+            best_model_state = trainer.network.state_dict().copy()
+
         # Log progress
         if epoch % config.training.log_every == 0:
             weights_str = f"({loss_dict.get('weight_ru', 1.0):.2f}, " \
@@ -121,10 +133,129 @@ def train_soap_gradient_norm():
             print(f"{epoch:5d} | {loss_dict['total']:8.2e} | "
                   f"{loss_dict['ru']:7.2e} | {loss_dict['u_bc']:7.2e} | {weights_str}")
 
+    # Save best model
+    save_best_model(trainer, best_model_state, best_loss, runtime_id)
+
     return trainer, training_history
 
-def visualize_soap_gradient_norm_results(trainer, history):
+def save_best_model(trainer, best_model_state, best_loss, runtime_id):
+    """Save the best model during training"""
+    results_dir = Path(f"results/run_{runtime_id}")
+    results_dir.mkdir(parents=True, exist_ok=True)
+
+    model_path = results_dir / "best_model.pt"
+    torch.save({
+        'model_state_dict': best_model_state,
+        'best_loss': best_loss,
+        'runtime_id': runtime_id,
+        'model_config': {
+            'input_dim': trainer.network.layers[0].in_features,
+            'hidden_dim': trainer.network.layers[0].out_features,
+            'output_dim': trainer.network.layers[-1].out_features,
+            'num_layers': len(trainer.network.layers)
+        }
+    }, model_path)
+
+    print(f"\nBest model saved to: {model_path}")
+    print(f"Best loss: {best_loss:.6e}")
+
+def create_comprehensive_visualizations(trainer, runtime_id):
+    """Create and save comprehensive visualizations including streamlines, pressure, and velocity fields"""
+    results_dir = Path(f"results/run_{runtime_id}")
+    results_dir.mkdir(parents=True, exist_ok=True)
+
+    # Evaluate solution on high-resolution grid
+    solution = trainer.physics.evaluate_solution(trainer.network, grid_resolution=100)
+
+    # Create comprehensive visualization figure
+    fig, axes = plt.subplots(2, 3, figsize=(18, 12))
+
+    # 1. Velocity magnitude with streamlines
+    ax = axes[0, 0]
+    speed = solution['speed']
+    im1 = ax.contourf(solution['x'], solution['y'], speed, levels=20, cmap='viridis')
+
+    # Add streamlines
+    u = solution['u']
+    v = solution['v']
+    ax.streamplot(solution['x'], solution['y'], u, v, color='white', linewidth=0.8, alpha=0.7, density=1.5)
+
+    ax.set_xlabel('X')
+    ax.set_ylabel('Y')
+    ax.set_title('Velocity Magnitude with Streamlines')
+    ax.set_aspect('equal')
+    plt.colorbar(im1, ax=ax, label='Speed')
+
+    # 2. Pressure field
+    ax = axes[0, 1]
+    pressure = solution['p']
+    im2 = ax.contourf(solution['x'], solution['y'], pressure, levels=20, cmap='RdBu_r')
+    ax.contour(solution['x'], solution['y'], pressure, levels=10, colors='black', alpha=0.4, linewidths=0.5)
+    ax.set_xlabel('X')
+    ax.set_ylabel('Y')
+    ax.set_title('Pressure Field')
+    ax.set_aspect('equal')
+    plt.colorbar(im2, ax=ax, label='Pressure')
+
+    # 3. U velocity component
+    ax = axes[0, 2]
+    im3 = ax.contourf(solution['x'], solution['y'], u, levels=20, cmap='RdBu_r')
+    ax.contour(solution['x'], solution['y'], u, levels=10, colors='black', alpha=0.4, linewidths=0.5)
+    ax.set_xlabel('X')
+    ax.set_ylabel('Y')
+    ax.set_title('U Velocity Component')
+    ax.set_aspect('equal')
+    plt.colorbar(im3, ax=ax, label='U Velocity')
+
+    # 4. V velocity component
+    ax = axes[1, 0]
+    im4 = ax.contourf(solution['x'], solution['y'], v, levels=20, cmap='RdBu_r')
+    ax.contour(solution['x'], solution['y'], v, levels=10, colors='black', alpha=0.4, linewidths=0.5)
+    ax.set_xlabel('X')
+    ax.set_ylabel('Y')
+    ax.set_title('V Velocity Component')
+    ax.set_aspect('equal')
+    plt.colorbar(im4, ax=ax, label='V Velocity')
+
+    # 5. Vorticity
+    ax = axes[1, 1]
+    # Calculate vorticity (curl of velocity)
+    dx = solution['x'][0, 1] - solution['x'][0, 0]
+    dy = solution['y'][1, 0] - solution['y'][0, 0]
+
+    du_dy = np.gradient(u, dy, axis=0)
+    dv_dx = np.gradient(v, dx, axis=1)
+    vorticity = dv_dx - du_dy
+
+    im5 = ax.contourf(solution['x'], solution['y'], vorticity, levels=20, cmap='RdBu_r')
+    ax.contour(solution['x'], solution['y'], vorticity, levels=10, colors='black', alpha=0.4, linewidths=0.5)
+    ax.set_xlabel('X')
+    ax.set_ylabel('Y')
+    ax.set_title('Vorticity Field')
+    ax.set_aspect('equal')
+    plt.colorbar(im5, ax=ax, label='Vorticity')
+
+    # 6. Streamlines only (for clarity)
+    ax = axes[1, 2]
+    ax.streamplot(solution['x'], solution['y'], u, v, color=speed, linewidth=1.5, cmap='viridis', density=2)
+    ax.set_xlabel('X')
+    ax.set_ylabel('Y')
+    ax.set_title('Streamlines (colored by speed)')
+    ax.set_aspect('equal')
+
+    plt.tight_layout()
+
+    # Save comprehensive visualization
+    comprehensive_path = results_dir / "comprehensive_solution.png"
+    plt.savefig(comprehensive_path, dpi=300, bbox_inches='tight')
+    print(f"Comprehensive solution saved to: {comprehensive_path}")
+
+    return fig, solution
+
+def visualize_soap_gradient_norm_results(trainer, history, runtime_id):
     """Visualize training results for SOAP + Gradient Norm weighting"""
+    results_dir = Path(f"results/run_{runtime_id}")
+    results_dir.mkdir(parents=True, exist_ok=True)
 
     # Create figure with more subplots to show weight evolution
     fig, ((ax1, ax2), (ax3, ax4), (ax5, ax6)) = plt.subplots(3, 2, figsize=(15, 18))
@@ -198,13 +329,15 @@ def visualize_soap_gradient_norm_results(trainer, history):
 
     plt.tight_layout()
 
-    # Save figure
-    save_path = Path("results/soap_gradient_norm_results.png")
-    save_path.parent.mkdir(exist_ok=True)
+    # Save training history figure
+    save_path = results_dir / "training_history.png"
     plt.savefig(save_path, dpi=150, bbox_inches='tight')
-    print(f"\nResults saved to: {save_path}")
+    print(f"\nTraining history saved to: {save_path}")
 
-    return fig
+    # Create and save comprehensive visualizations
+    comp_fig, solution = create_comprehensive_visualizations(trainer, runtime_id)
+
+    return fig, comp_fig, solution
 
 def analyze_soap_gradient_norm_performance(history):
     """Analyze SOAP + Gradient Norm weighting performance"""
@@ -284,24 +417,48 @@ def analyze_soap_gradient_norm_performance(history):
 
 def main():
     """Main function for SOAP + Gradient Norm Weighting demonstration"""
+    # Generate unique runtime ID
+    timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+    unique_id = str(uuid.uuid4())[:8]
+    runtime_id = f"{timestamp}_{unique_id}"
+
     print("SOAP OPTIMIZER + GRADIENT NORM WEIGHTING DEMONSTRATION")
     print("=" * 65)
     print("This demo shows advanced PINN training with:")
     print("• SOAP optimizer (2nd order adaptive method)")
     print("• Gradient norm weighting (automatic loss balancing)")
     print("• No manual tuning required!")
+    print(f"• Runtime ID: {runtime_id}")
     print()
 
     # Train with SOAP + Gradient Norm weighting
-    trainer, history = train_soap_gradient_norm()
+    trainer, history = train_soap_gradient_norm(runtime_id)
 
     # Analyze results
     final_losses, final_weights = analyze_soap_gradient_norm_performance(history)
 
     # Visualize results
-    fig = visualize_soap_gradient_norm_results(trainer, history)
+    training_fig, comprehensive_fig, solution = visualize_soap_gradient_norm_results(trainer, history, runtime_id)
 
-    # Show the plot
+    # Save runtime metadata
+    results_dir = Path(f"results/run_{runtime_id}")
+    metadata_path = results_dir / "run_metadata.txt"
+    with open(metadata_path, 'w') as f:
+        f.write(f"Runtime ID: {runtime_id}\n")
+        f.write(f"Timestamp: {datetime.datetime.now().isoformat()}\n")
+        f.write(f"Method: SOAP + Gradient Norm Weighting\n")
+        f.write(f"Final Loss: {history['total_loss'][-1]:.6e}\n")
+        f.write(f"Training Epochs: {len(history['epochs'])}\n")
+        f.write(f"Best Loss: {min(history['total_loss']):.6e}\n")
+
+    print(f"\nAll results saved in: {results_dir}")
+    print(f"Files created:")
+    print(f"  - best_model.pt")
+    print(f"  - training_history.png")
+    print(f"  - comprehensive_solution.png")
+    print(f"  - run_metadata.txt")
+
+    # Show the plots
     plt.show()
 
     print("\nSOAP + Gradient Norm Weighting Characteristics:")
@@ -312,8 +469,8 @@ def main():
     print("✓ Robust across different problem scales")
     print("✓ Research-grade training with monitoring capabilities")
 
-    return trainer, history, final_losses, final_weights
+    return trainer, history, final_losses, final_weights, runtime_id
 
 if __name__ == "__main__":
     # Run the demonstration
-    trainer, history, losses, weights = main()
+    trainer, history, losses, weights, runtime_id = main()
