@@ -197,8 +197,9 @@ class CavityFlowProblem:
         v_pred = output[:, 1]
         
         # Compute boundary losses (following JAX reference)
-        u_bc_loss = torch.mean((u_pred - self.u_bc) ** 2)
-        v_bc_loss = torch.mean((v_pred - self.v_bc) ** 2)
+        # Move boundary condition tensors to same device as predictions
+        u_bc_loss = torch.mean((u_pred - self.u_bc.to(u_pred.device)) ** 2)
+        v_bc_loss = torch.mean((v_pred - self.v_bc.to(v_pred.device)) ** 2)
         
         return {
             "u_bc": u_bc_loss,
@@ -233,30 +234,51 @@ class CavityFlowProblem:
             "physics_total": ru_loss + rv_loss + rc_loss
         }
     
-    def compute_total_loss(self, network: nn.Module, collocation_points: torch.Tensor) -> Tuple[torch.Tensor, Dict[str, torch.Tensor]]:
+    def compute_total_loss(self, network: nn.Module, collocation_points: torch.Tensor,
+                          adaptive_weights: Optional[Dict[str, float]] = None) -> Tuple[torch.Tensor, Dict[str, torch.Tensor]]:
         """
         Compute total weighted loss combining physics and boundary terms
-        
+
         Args:
             network: Physics-informed neural network
             collocation_points: Interior domain points for physics
-            
+            adaptive_weights: Optional adaptive weights from gradient norm or NTK weighting
+
         Returns:
-            Tuple of (total_loss, loss_dict) 
+            Tuple of (total_loss, loss_dict)
         """
         # Compute individual loss components
         boundary_losses = self.compute_boundary_loss(network)
         physics_losses = self.compute_physics_loss(network, collocation_points)
-        
-        # Apply loss weighting from config
-        weights = self.config.loss_weights
-        
+
+        # Combine individual loss components for adaptive weighting
+        individual_losses = {
+            "u_bc": boundary_losses["u_bc"],
+            "v_bc": boundary_losses["v_bc"],
+            "ru": physics_losses["ru"],
+            "rv": physics_losses["rv"],
+            "rc": physics_losses["rc"],
+        }
+
+        # Determine weights to use
+        if adaptive_weights is not None:
+            # Use adaptive weights
+            weights = adaptive_weights
+        else:
+            # Use fixed weights from config
+            config_weights = self.config.loss_weights
+            weights = {
+                "u_bc": config_weights["boundary"],
+                "v_bc": config_weights["boundary"],
+                "ru": config_weights["momentum_x"],
+                "rv": config_weights["momentum_y"],
+                "rc": config_weights["continuity"],
+            }
+
+        # Apply weighting
         weighted_losses = {
-            "u_bc": weights["boundary"] * boundary_losses["u_bc"],
-            "v_bc": weights["boundary"] * boundary_losses["v_bc"],
-            "ru": weights["momentum_x"] * physics_losses["ru"],
-            "rv": weights["momentum_y"] * physics_losses["rv"],
-            "rc": weights["continuity"] * physics_losses["rc"],
+            key: weights.get(key, 1.0) * loss_value
+            for key, loss_value in individual_losses.items()
         }
         
         # Total loss

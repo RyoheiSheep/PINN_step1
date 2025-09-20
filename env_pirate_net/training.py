@@ -21,6 +21,7 @@ from soap import SOAP
 from settings import Config
 from pirate_network import create_network
 from cavity_flow import CavityFlowProblem
+from adaptive_weighting import AdaptiveWeightingManager
 
 class PINNTrainer:
     """
@@ -59,6 +60,14 @@ class PINNTrainer:
         
         # Generate training points
         self._generate_training_data()
+
+        # Setup adaptive weighting
+        self.weighting_manager = AdaptiveWeightingManager(
+            scheme=config.weighting.scheme,
+            grad_norm_config=config.weighting.grad_norm,
+            ntk_config=config.weighting.ntk
+        )
+        print(f"Weighting scheme: {config.weighting.scheme}")
         
     def _create_optimizer(self) -> torch.optim.Optimizer:
         """Create SOAP optimizer with configured parameters"""
@@ -98,26 +107,51 @@ class PINNTrainer:
     
     def train_step(self) -> Dict[str, float]:
         """
-        Single training step with SOAP optimizer
+        Single training step with adaptive loss weighting
         Returns loss dictionary for monitoring
         """
         self.network.train()
         self.optimizer.zero_grad()
-        
-        # Compute total loss
-        total_loss, loss_dict = self.physics.compute_total_loss(
-            self.network, self.collocation_points
+
+        # First, compute individual loss components without weighting
+        boundary_losses = self.physics.compute_boundary_loss(self.network)
+        physics_losses = self.physics.compute_physics_loss(self.network, self.collocation_points)
+
+        # Combine for adaptive weighting computation
+        individual_losses = {
+            "u_bc": boundary_losses["u_bc"],
+            "v_bc": boundary_losses["v_bc"],
+            "ru": physics_losses["ru"],
+            "rv": physics_losses["rv"],
+            "rc": physics_losses["rc"],
+        }
+
+        # Get adaptive weights
+        adaptive_weights = self.weighting_manager.get_weights(
+            network=self.network,
+            loss_dict=individual_losses,
+            collocation_points=self.collocation_points,
+            boundary_points=self.boundary_points
         )
-        
+
+        # Compute total loss with adaptive weights
+        total_loss, loss_dict = self.physics.compute_total_loss(
+            self.network, self.collocation_points, adaptive_weights
+        )
+
         # Backpropagation
         total_loss.backward()
-        
+
         # Optimizer step
         self.optimizer.step()
-        
+
+        # Add weighting information to loss dict for logging
+        weight_dict = {f"weight_{k}": v for k, v in adaptive_weights.items()}
+        loss_dict.update(weight_dict)
+
         # Convert tensors to floats for logging
         loss_dict = {k: v.item() if torch.is_tensor(v) else v for k, v in loss_dict.items()}
-        
+
         return loss_dict
     
     def validate(self) -> Dict[str, float]:

@@ -95,12 +95,33 @@ class PhysicsConfig:
     })
 
 @dataclass
+class AdaptiveWeightingConfig:
+    """Configuration for adaptive loss weighting schemes"""
+    # Weighting scheme: "fixed", "grad_norm", "ntk"
+    scheme: str = "fixed"
+
+    # Gradient norm weighting configuration
+    grad_norm: Dict = field(default_factory=lambda: {
+        "alpha": 0.9,           # EMA momentum factor
+        "update_every": 100,    # Update frequency
+        "eps": 1e-8,           # Numerical stability
+    })
+
+    # Neural Tangent Kernel weighting configuration
+    ntk: Dict = field(default_factory=lambda: {
+        "alpha": 0.9,           # EMA momentum factor
+        "update_every": 1000,   # Update frequency (expensive)
+        "eps": 1e-8,           # Numerical stability
+    })
+
+@dataclass
 class Config:
     """Main configuration class combining all settings"""
     network: NetworkConfig = field(default_factory=NetworkConfig)
     training: TrainingConfig = field(default_factory=TrainingConfig)
     physics: PhysicsConfig = field(default_factory=PhysicsConfig)
-    
+    weighting: AdaptiveWeightingConfig = field(default_factory=AdaptiveWeightingConfig)
+
     # Global settings
     seed: int = 42
     project_name: str = "PINN-CavityFlow-PirateNet"
