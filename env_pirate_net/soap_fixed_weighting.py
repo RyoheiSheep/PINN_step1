@@ -126,10 +126,10 @@ def save_best_model(trainer, best_model_state, best_loss, runtime_id):
         'best_loss': best_loss,
         'runtime_id': runtime_id,
         'model_config': {
-            'input_dim': trainer.network.layers[0].in_features,
-            'hidden_dim': trainer.network.layers[0].out_features,
-            'output_dim': trainer.network.layers[-1].out_features,
-            'num_layers': len(trainer.network.layers)
+            'hidden_dim': trainer.network.hidden_dim,
+            'output_dim': trainer.network.out_dim,
+            'num_layers': trainer.network.num_layers,
+            'config': trainer.network.config.__dict__
         }
     }, model_path)
 
@@ -155,7 +155,7 @@ def create_comprehensive_visualizations(trainer, runtime_id):
     # Add streamlines
     u = solution['u']
     v = solution['v']
-    ax.streamplot(solution['x'], solution['y'], u, v, color='white', linewidth=0.8, alpha=0.7, density=1.5)
+    ax.streamplot(solution['x'], solution['y'], u, v, color='white', linewidth=0.8, density=1.5)
 
     ax.set_xlabel('X')
     ax.set_ylabel('Y')
@@ -214,7 +214,8 @@ def create_comprehensive_visualizations(trainer, runtime_id):
 
     # 6. Streamlines only (for clarity)
     ax = axes[1, 2]
-    ax.streamplot(solution['x'], solution['y'], u, v, color=speed, linewidth=1.5, cmap='viridis', density=2)
+    strm = ax.streamplot(solution['x'], solution['y'], u, v, color=speed, linewidth=1.5, cmap='viridis', density=2)
+    plt.colorbar(strm.lines, ax=ax, label='Speed')
     ax.set_xlabel('X')
     ax.set_ylabel('Y')
     ax.set_title('Streamlines (colored by speed)')
@@ -335,11 +336,11 @@ def analyze_soap_fixed_performance(history):
     print(f"  Physics/Total:    {final_physics_ratio:.3f}")
 
     if final_boundary_ratio < 0.1:
-        print("  ⚠️  Boundary loss may be too small (< 10% of total)")
+        print("  !  Boundary loss may be too small (< 10% of total)")
     elif final_boundary_ratio > 0.9:
-        print("  ⚠️  Boundary loss may be too large (> 90% of total)")
+        print("  !  Boundary loss may be too large (> 90% of total)")
     else:
-        print("  ✓  Loss balance seems reasonable")
+        print("  +  Loss balance seems reasonable")
 
     return final_losses
 
@@ -353,10 +354,10 @@ def main():
     print("SOAP OPTIMIZER + FIXED WEIGHTING DEMONSTRATION")
     print("=" * 60)
     print("This demo shows traditional PINN training with:")
-    print("• SOAP optimizer (2nd order adaptive method)")
-    print("• Fixed loss weighting (manual tuning required)")
-    print("• Manual balance between physics and boundary losses")
-    print(f"• Runtime ID: {runtime_id}")
+    print("- SOAP optimizer (2nd order adaptive method)")
+    print("- Fixed loss weighting (manual tuning required)")
+    print("- Manual balance between physics and boundary losses")
+    print(f"- Runtime ID: {runtime_id}")
     print()
 
     # Train with SOAP + Fixed weighting
@@ -390,11 +391,11 @@ def main():
     plt.show()
 
     print("\nSOAP + Fixed Weighting Characteristics:")
-    print("✓ Stable convergence with SOAP's adaptive preconditioning")
-    print("✓ Predictable behavior with fixed weights")
-    print("⚠️ Requires manual tuning of loss weights")
-    print("⚠️ May not achieve optimal loss balance")
-    print("⚠️ Sensitive to problem-specific weight choices")
+    print("+ Stable convergence with SOAP's adaptive preconditioning")
+    print("+ Predictable behavior with fixed weights")
+    print("! Requires manual tuning of loss weights")
+    print("! May not achieve optimal loss balance")
+    print("! Sensitive to problem-specific weight choices")
 
     return trainer, history, final_losses, runtime_id
 
