@@ -14,6 +14,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 from pathlib import Path
 from typing import List, Dict, Tuple, Optional
+from dataclasses import dataclass, field
 import datetime
 import uuid
 import copy
@@ -635,8 +636,5 @@ def main():
 
 
 if __name__ == "__main__":
-    # Import dataclass decorator
-    from dataclasses import dataclass, field
-
     # Run curriculum learning demonstration
     curriculum_trainer, trainer, history = main()
